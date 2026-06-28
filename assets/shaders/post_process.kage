@@ -1,0 +1,33 @@
+package main
+
+//kage:unit pixels
+
+var Time float
+
+func hash(p vec3) float {
+	p = fract(p * .1031)
+	p += dot(p, p.zyx+31.32)
+	return fract((p.x + p.y) * p.z)
+}
+
+func Fragment(dst vec4, src vec2, color vec4) vec4 {
+	screenUv := dst.xy - imageDstOrigin()
+	col := imageSrc0At(src).rgb
+
+	// Scanline effect
+	scanline := 1.0 - 0.025*step(0.66, fract(screenUv.y/3.0))
+	col *= scanline
+
+	// Vignette
+	uv01 := screenUv / imageDstSize()
+	vig := smoothstep(0.0, 0.45, uv01.x) * smoothstep(1.0, 0.55, uv01.x) *
+		smoothstep(0.0, 0.45, uv01.y) * smoothstep(1.0, 0.55, uv01.y)
+	vig = pow(vig, 0.35)
+	col *= mix(0.35, 1.0, vig)
+
+	// Film grain
+	grain := (hash(vec3(screenUv.x, screenUv.y, Time*100)) - 0.5) * 0.06
+	col += grain
+
+	return vec4(clamp(col, 0., 1.), 1)
+}

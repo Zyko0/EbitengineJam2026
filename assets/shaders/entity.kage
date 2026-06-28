@@ -1,0 +1,103 @@
+package main
+
+//kage:unit pixels
+
+const (
+	MapHeight   = 40
+	MaxRaySteps = 256
+
+	WallBias = 1.5
+)
+
+var CamFloor vec3
+var CamFract vec3
+var CameraPVMatrixInv mat4
+
+var MapWidth int
+var MapDepth int
+var Walls [128]int
+
+var Time float
+var Disconnect float
+var DisconnectDir float
+
+// https://www.shadertoy.com/view/4djSRW
+func hash(p vec3) float {
+	p = fract(p * .1031)
+	p += dot(p, p.zyx+31.32)
+	return fract((p.x + p.y) * p.z)
+}
+
+// Same as scene.kage
+func solidWorld(p vec3) float {
+	p = floor(p)
+	if p.y < 0 || p.y >= float(MapHeight) {
+		return 1.
+	}
+	if p.x < 0 || p.x >= float(MapWidth) || p.z < 0 || p.z >= float(MapDepth) {
+		return 0.
+	}
+	intsPerRow := (MapWidth + 31) / 32
+	idx := int(p.z)*intsPerRow + int(p.x)/32
+	bit := int(p.x) % 32
+	if (Walls[idx] & (1 << bit)) != 0 {
+		return 1.
+	}
+	return 0.
+}
+
+// wallOccludes returns voxel intersection before maxDist
+func wallOccludes(ro, rd vec3, maxDist float) bool {
+	p := floor(ro)
+	ri := 1. / rd
+	rs := sign(rd)
+	dis := (p - ro + 0.5 + rs*0.5) * ri
+	for i := 0.; i < MaxRaySteps; i++ {
+		if min(dis.x, min(dis.y, dis.z)) > maxDist {
+			return false
+		}
+		mm := step(dis.xyz, dis.yzx) * step(dis.xyz, dis.zxy)
+		dis += mm * rs * ri
+		p += mm * rs
+		if solidWorld(p+CamFloor) > 0.5 {
+			return true
+		}
+	}
+	return false
+}
+
+func Fragment(dst vec4, src vec2, color vec4) vec4 {
+	// Rebuild the camera ray identically to scene.kage
+	uv := (dst.xy-imageDstOrigin())/imageDstSize()*2 - 1
+	uv.xy *= -1
+	near4 := CameraPVMatrixInv * normalize(vec4(uv, -1, 1))
+	far4 := CameraPVMatrixInv * normalize(vec4(uv, 1, 1))
+	far3 := far4.xyz / far4.w
+	ro := near4.xyz / near4.w
+	rd := normalize(far3 - ro)
+	ro += CamFract
+
+	d := abs(color.a) // entity camera distance
+	bias := 0.
+	if color.a < 0. {
+		bias = WallBias // solid structure: ignore the wall it is mounted on
+	}
+	if wallOccludes(ro, rd, d-bias) {
+		return vec4(0)
+	}
+
+	// Flicker + blackout, kept identical to scene.kage so button, elevator also darken
+	rgb := color.rgb
+	flickerBase := hash(vec3(floor(Time*6), 0.31, 0.77))
+	flickerFine := hash(vec3(floor(Time*14), 0.57, 0.23)) * 0.15
+	flickerRng := flickerBase*0.85 + flickerFine
+	disconnectFlicker := smoothstep(0.02, 0.2, Disconnect) * smoothstep(0.75, 0.3, Disconnect) * DisconnectDir
+	reconnectFlicker := smoothstep(0.85, 0.45, Disconnect) * smoothstep(0.35, 0.55, Disconnect) * (1 - DisconnectDir)
+	flickerAmt := disconnectFlicker + reconnectFlicker
+	rgb *= mix(1.0, 0.4+0.6*flickerRng, flickerAmt)
+
+	blackout := smoothstep(0.4, 0.95, Disconnect)
+	rgb = mix(rgb, vec3(0), blackout)
+
+	return vec4(rgb, 1.)
+}

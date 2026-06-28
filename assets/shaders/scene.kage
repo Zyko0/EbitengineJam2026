@@ -1,0 +1,303 @@
+package main
+
+//kage:unit pixels
+
+const (
+	MapHeight   = 40
+	MaxRaySteps = 256
+
+	// Surface shading
+	Albedo        = 0.75
+	BrightnessCap = 0.85
+
+	// Fog
+	FogStart   = 10.0
+	FogDensity = 0.08
+	FogColor   = 0.02
+
+	// Reflections
+	FloorRefl     = 0.1
+	FloorReflMax  = 0.5
+	WallRefl      = 0.2
+	WallReflMax   = 0.4
+	GlossJitter   = 0.005
+	ReflBlurBase  = 0.0012
+	ReflRoughGrow = 0.05
+)
+
+func solidWorld(p vec3) float {
+	p = floor(p)
+	if p.y < 0 || p.y >= float(MapHeight) {
+		return 1.
+	}
+	if p.x < 0 || p.x >= float(MapWidth) || p.z < 0 || p.z >= float(MapDepth) {
+		return 0.
+	}
+
+	intsPerRow := (MapWidth + 31) / 32
+	idx := int(p.z)*intsPerRow + int(p.x)/32
+	bit := int(p.x) % 32
+	if (Walls[idx] & (1 << bit)) != 0 {
+		return 1.
+	}
+	return 0.
+}
+
+// voxel is the boolean form used by the DDA. p is a trace-space voxel (integer);
+// CamFloor shifts it to world space without recomputing floor(CameraPosition).
+func voxel(p vec3) bool {
+	return solidWorld(p+CamFloor) > 0.5
+}
+
+func voxelAO(p, d1, d2 vec3) vec4 {
+	side := vec4(
+		solidWorld(p+d1),
+		solidWorld(p+d2),
+		solidWorld(p-d1),
+		solidWorld(p-d2),
+	)
+	corner := vec4(
+		solidWorld(p+d1+d2),
+		solidWorld(p-d1+d2),
+		solidWorld(p-d1-d2),
+		solidWorld(p+d1-d2),
+	)
+	return 1. - (side+side.yzwx+max(corner, side*side.yzwx))/3.
+}
+
+// ambientOcclusion expects p in world space. mask is abs(normal), passed in by
+// the caller so it isn't recomputed here.
+func ambientOcclusion(p, normal, mask vec3) float {
+	d1 := mask.zxy
+	d2 := mask.yzx
+	// Sample from the empty voxel adjacent to the hit face (toward normal = toward camera).
+	vp := floor(p + normal*0.5)
+	vAO := voxelAO(vp, d1, d2)
+	fp := fract(p)
+	uv := fp.yz*mask.x + fp.zx*mask.y + fp.xy*mask.z
+	ao := mix(mix(vAO.z, vAO.w, uv.x), mix(vAO.y, vAO.x, uv.x), uv.y)
+	ao = 1. - (1.-ao)*(1.-ao)
+	return mix(1., ao, 0.9)
+}
+
+func voxelTrace(ro, rd vec3) vec4 {
+	p := floor(ro)
+	ri := 1. / rd
+	rs := sign(rd)
+	dis := (p - ro + 0.5 + rs*0.5) * ri
+	// mm (the axis last stepped along) is set in the loop, or in the count==0
+	// instant-hit block below; this is just the declaration.
+	mm := vec3(0.)
+	count := 0
+	for i := 0.; i < MaxRaySteps; i++ {
+		if voxel(p) {
+			break
+		}
+
+		mm = step(dis.xyz, dis.yzx) * step(dis.xyz, dis.zxy)
+		dis += (mm * rs * ri)
+		p += (mm * rs)
+		count++
+	}
+	// Note: hack if intersects instantly, need to advance p
+	if count == 0 {
+		p = floor(ro - rd*0.01)
+		dis = (p - ro + 0.5 + rs*0.5) * ri
+		mm = step(dis.xyz, dis.yzx) * step(dis.xyz, dis.zxy)
+		p += (mm * rs)
+	}
+	// Cube intersection
+	mini := (p - ro + 0.5 - 0.5*rs) * ri
+	t := abs(max(mini.x, max(mini.y, mini.z)))
+
+	return vec4(t, -mm*rs)
+}
+
+// https://www.shadertoy.com/view/4djSRW
+func hash(p vec3) float {
+	p = fract(p * .1031)
+	p += dot(p, p.zyx+31.32)
+	return fract((p.x + p.y) * p.z)
+}
+
+func noise(p vec3) float {
+	i := floor(p)
+	f := fract(p)
+	f = f * f * (3 - 2*f)
+	return mix(
+		mix(mix(hash(i), hash(i+vec3(1, 0, 0)), f.x),
+			mix(hash(i+vec3(0, 1, 0)), hash(i+vec3(1, 1, 0)), f.x), f.y),
+		mix(mix(hash(i+vec3(0, 0, 1)), hash(i+vec3(1, 0, 1)), f.x),
+			mix(hash(i+vec3(0, 1, 1)), hash(i+vec3(1, 1, 1)), f.x), f.y),
+		f.z)
+}
+
+func surfaceGrain(p vec3) float {
+	return 1 - (1-noise(p*16.))*noise(p*64)
+}
+
+var Time float
+var CamFloor vec3
+var CamFract vec3
+var CameraPVMatrixInv mat4
+
+var MapWidth int
+var MapDepth int
+var Walls [128]int
+
+var Disconnect float
+var DisconnectDir float
+
+// tileDetail ages an otherwise-clean tile with smooth
+func tileDetail(cell, local vec2) float {
+	wc := cell + local
+	// Broad dirt patches spanning several tiles (room-scale unevenness).
+	dirt := mix(1.0, 0.72, smoothstep(0.45, 0.85, noise(vec3(wc*0.35, 2.7))))
+	// Per-tile tone: each tile slightly different.
+	tone := mix(0.8, 1.0, hash(vec3(cell, 19.1)))
+	// Grime in the grout joints: darken toward edges, by a per-tile amount.
+	edge := max(abs(local.x), abs(local.y))
+	joint := mix(1.0, mix(0.95, 0.65, hash(vec3(cell, 8.8))), smoothstep(0.3, 0.5, edge))
+	return dirt * tone * joint
+}
+
+// dwidth is the screen-space spread of x (the larger of its two partial
+// derivatives), floored so it never collapses to zero.
+func dwidth(x float) float {
+	return max(max(abs(dfdx(x)), abs(dfdy(x))), 0.001)
+}
+
+// aaWidth selects the antialiasing filter width
+func aaWidth(w, fw float) float {
+	return mix(w, fw, step(0., fw))
+}
+
+// shadeSurface returns the lit material color for a voxel hit
+func shadeSurface(p, normal, mask vec3, fw, ao float) vec3 {
+	// Face classification (normal is a unit axis): compute once, reuse below.
+	isFloor := normal.y > 0.5
+	isCeil := normal.y < -0.5
+	isWall := mask.x > 0.5 || mask.z > 0.5
+
+	clr := vec3(Albedo) * mix(0.925, 1.00, surfaceGrain(p))
+	// Floor: grout-lined institutional tiles
+	if isFloor {
+		fx := abs(fract(p.x) - 0.5)
+		fz := abs(fract(p.z) - 0.5)
+		grout := min(smoothstep(0.0, aaWidth(dwidth(p.x), fw)+0.01, fx), smoothstep(0.0, aaWidth(dwidth(p.z), fw)+0.01, fz))
+		cell := floor(p.xz + 0.5)
+		clr = vec3(mix(0.03, 0.72, grout) * tileDetail(cell, p.xz-cell))
+	}
+	// Ceiling
+	if isCeil {
+		clr *= 0.5
+	}
+	// Walls: tiled wainscoting at base, plain plaster above
+	if isWall {
+		wallU := p.x*mask.z + p.z*mask.x
+		fu := abs(fract(wallU) - 0.5)
+		fv := abs(fract(p.y+0.5) - 0.5)
+		wv := aaWidth(dwidth(p.y), fw)
+		// Derive the U width from p.x and p.z separately so convex wall edges
+		// (where wallU jumps between axes) don't spike the filter width.
+		wu := aaWidth(mask.z*dwidth(p.x)+mask.x*dwidth(p.z), fw)
+		wainGrout := min(smoothstep(0.0, wu+0.01, fu), smoothstep(0.0, wv+0.01, fv))
+		wallCell := vec2(floor(wallU+0.5), floor(p.y))
+		wallLocal := vec2(wallU, p.y) - vec2(wallCell.x, wallCell.y+0.5)
+		wainTile := mix(0.03, 0.88, wainGrout) * tileDetail(wallCell, wallLocal)
+		// Dark cap line at the wainscoting top edge
+		cap := smoothstep(0.0, wv+0.02, abs(p.y-1.5))
+		wainTile *= cap
+		// Hard cut to plain plaster above
+		blend := smoothstep(1.49, 1.51, p.y)
+		clr = vec3(mix(wainTile, clr.r, blend))
+	}
+	// Smudge + wall base shadow
+	clr *= mix(0.90, 1.0, noise(p*0.5))
+	if isWall {
+		clr *= mix(0.75, 1.0, smoothstep(1.0, 2.0, p.y))
+	}
+	// Ambient occlusion: contact shadows in corners and wall-floor seams
+	clr *= ao
+	return min(clr, vec3(BrightnessCap))
+}
+
+// applyFog blends a color toward the dark fog color by distance t.
+func applyFog(clr vec3, t float) vec3 {
+	fogAmount := max(0., 1-exp(-(t-FogStart)*FogDensity))
+	return mix(clr, vec3(FogColor), fogAmount)
+}
+
+// glossNormal perturbs a normal with a static, low-freq noise for a wavy look
+func glossNormal(n, wp vec3, rough float) vec3 {
+	return normalize(n + (vec3(noise(wp*4+11), noise(wp*4+27), noise(wp*4+53))-0.5)*GlossJitter*rough)
+}
+
+// reflectTile traces one reflection bounce off a polished tile
+func reflectTile(hit, rd, normal vec3, t float) vec3 {
+	o := hit + normal*0.01
+	rough := 1 + t*ReflRoughGrow
+	dir := reflect(rd, glossNormal(normal, o+CamFloor, rough))
+	v := voxelTrace(o, dir)
+	rp := o + dir*v.x + CamFloor
+	rmask := abs(v.yzw)
+	fw := (t + v.x) * ReflBlurBase * rough
+	return applyFog(shadeSurface(rp, v.yzw, rmask, fw, ambientOcclusion(rp, v.yzw, rmask)), t+v.x)
+}
+
+func Fragment(dst vec4, src vec2, color vec4) vec4 {
+	uv := (dst.xy-imageDstOrigin())/imageDstSize()*2 - 1
+	uv.xy *= -1
+	// Disconnect UV warp: per-scanline horizontal jitter + fine pixel noise
+	disconnectWarp := smoothstep(0.5, 1., Disconnect) * smoothstep(0.3, 0.8, Disconnect) * DisconnectDir
+	rowShift := (hash(vec3(floor(dst.y/2), Time*190, 0.42)) - 0.5) * 0.02 * disconnectWarp
+	fineShift := (hash(vec3(dst.xy/imageDstSize(), Time*200)) - 0.5) * 0.02 * disconnectWarp
+	uv.x += rowShift
+	uv.y += fineShift * 0.4
+	// Ray calculation
+	near4 := CameraPVMatrixInv * normalize(vec4(uv, -1, 1))
+	far4 := CameraPVMatrixInv * normalize(vec4(uv, 1, 1))
+	far3 := far4.xyz / far4.w
+	ro := near4.xyz / near4.w
+	rd := normalize(far3 - ro)
+	ro += CamFract
+
+	// Voxel tracing
+	v := voxelTrace(ro, rd)
+	normal := v.yzw
+	mask := abs(normal)
+	t := v.x
+	p := ro + rd*t + CamFloor
+	ao := ambientOcclusion(p, normal, mask)
+
+	// Surface shading
+	finalColor := shadeSurface(p, normal, mask, -1, ao)
+
+	// Polished tiles reflect one bounce
+	fresnel := pow(1-clamp(dot(-rd, normal), 0., 1.), 5.0)
+	isFloor := step(0.5, normal.y)
+	isWall := step(0.5, mask.x+mask.z) * smoothstep(1.6, 1.4, p.y)
+	floorK := isFloor * mix(FloorRefl, FloorReflMax, fresnel)
+	wallK := isWall * mix(WallRefl, WallReflMax, fresnel)
+	reflK := max(floorK, wallK) * ao
+	if reflK > 0 {
+		finalColor = mix(finalColor, reflectTile(ro+rd*t, rd, normal, t), reflK)
+	}
+
+	// Distance fog
+	finalColor = applyFog(finalColor, t)
+
+	// Flicker: low-T window on disconnect, high-T window on reconnect
+	flickerBase := hash(vec3(floor(Time*6), 0.31, 0.77))
+	flickerFine := hash(vec3(floor(Time*14), 0.57, 0.23)) * 0.15
+	flickerRng := flickerBase*0.85 + flickerFine
+	disconnectFlicker := smoothstep(0.02, 0.2, Disconnect) * smoothstep(0.75, 0.3, Disconnect) * DisconnectDir
+	reconnectFlicker := smoothstep(0.85, 0.45, Disconnect) * smoothstep(0.35, 0.55, Disconnect) * (1 - DisconnectDir)
+	flickerAmt := disconnectFlicker + reconnectFlicker
+	finalColor *= mix(1.0, 0.4+0.6*flickerRng, flickerAmt)
+
+	blackout := smoothstep(0.4, 0.95, Disconnect)
+	finalColor = mix(finalColor, vec3(0), blackout)
+
+	return vec4(finalColor, 1)
+}
