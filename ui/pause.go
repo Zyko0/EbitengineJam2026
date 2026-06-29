@@ -29,6 +29,11 @@ func (p *Pause) Toggle() {
 	p.active = !p.active
 }
 
+// Show raises the menu (idempotent).
+func (p *Pause) Show() {
+	p.active = true
+}
+
 func (p *Pause) Hide() {
 	p.active = false
 }

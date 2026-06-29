@@ -10,13 +10,13 @@ import (
 	"github.com/Zyko0/EbitengineJam2026/logic"
 	"github.com/go-gl/mathgl/mgl64"
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
 type Game struct {
-	offscreen *ebiten.Image
-	game      *core.Game
-	updated   bool
+	offscreen   *ebiten.Image
+	game        *core.Game
+	updated     bool
+	wasCaptured bool // wasm: tracks pointer-lock loss to pause on Escape/defocus
 }
 
 func New() *Game {
@@ -33,16 +33,19 @@ func New() *Game {
 
 func (g *Game) Update() error {
 	if !input.EnsureCursorCaptured() {
+		// On wasm the browser eats the Escape keydown to release the pointer lock,
+		// so a lock we previously held disappearing is our only Escape/defocus
+		// signal. Raise the pause (skip the initial pre-click state so the game
+		// doesn't start paused); the run then resumes deliberately on the next click.
+		if runtime.GOOS == "js" && g.wasCaptured {
+			g.game.Pause()
+		}
+		g.wasCaptured = false
 		return nil
 	}
-	// Escape quits on native. On wasm the browser also uses it to drop the pointer
-	// lock, so there it toggles the pause menu instead (handy when the player
-	// defocuses the window).
-	if runtime.GOOS == "js" {
-		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
-			g.game.TogglePause()
-		}
-	} else if ebiten.IsKeyPressed(ebiten.KeyEscape) {
+	g.wasCaptured = true
+	// Escape quits on native; on wasm it releases the pointer lock, handled above.
+	if runtime.GOOS != "js" && ebiten.IsKeyPressed(ebiten.KeyEscape) {
 		return ebiten.Termination
 	}
 
