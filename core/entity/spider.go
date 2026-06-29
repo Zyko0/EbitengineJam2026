@@ -22,7 +22,7 @@ const (
 	spiderHuntSpeed   = 0.2 // charge across the ceiling toward the player's room
 	spiderDropSpeed   = 0.4 // straight plunge down the room's middle
 	spiderClimbSpeed  = 0.3 // climb back up to the ceiling after a strike
-	spiderGroundSpeed = 0.1 // crawl across the floor toward the player
+	spiderGroundSpeed = 0.2 // crawl across the floor toward the player
 
 	spiderArriveTol = 0.6 // XZ distance that counts as "reached" a cell centre
 	spiderProbe     = 0.4 // wall look-ahead so it stops short of a block

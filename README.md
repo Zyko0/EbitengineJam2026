@@ -1,4 +1,3 @@
-# EbitengineJam2026
+# Eleva
 
-Entry for Ebitengine Game Jam 2026
-
+Instructions and game playable here: https://zyk0.itch.io/eleva

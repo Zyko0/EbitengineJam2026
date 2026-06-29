@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"runtime"
 
@@ -11,7 +10,7 @@ import (
 	"github.com/Zyko0/EbitengineJam2026/logic"
 	"github.com/go-gl/mathgl/mgl64"
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
 type Game struct {
@@ -36,9 +35,14 @@ func (g *Game) Update() error {
 	if !input.EnsureCursorCaptured() {
 		return nil
 	}
-	// Escape quits on native; on wasm/js it does nothing and falls through to the
-	// in-game pause toggle instead.
-	if runtime.GOOS != "js" && ebiten.IsKeyPressed(ebiten.KeyEscape) {
+	// Escape quits on native. On wasm the browser also uses it to drop the pointer
+	// lock, so there it toggles the pause menu instead (handy when the player
+	// defocuses the window).
+	if runtime.GOOS == "js" {
+		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+			g.game.TogglePause()
+		}
+	} else if ebiten.IsKeyPressed(ebiten.KeyEscape) {
 		return ebiten.Termination
 	}
 
@@ -46,6 +50,21 @@ func (g *Game) Update() error {
 	g.updated = false
 
 	return nil
+}
+
+func (g *Game) Draw(screen *ebiten.Image) {
+	if !g.updated {
+		g.game.Draw(g.offscreen)
+		g.updated = true
+	}
+
+	screen.DrawImage(g.offscreen, nil)
+
+	/*p := g.game.PlayerPosition()
+	ebitenutil.DebugPrint(screen, fmt.Sprintf(
+		"FPS: %.2f - Pos: %.2f, %.2f, %.2f - Charge: %.2f",
+		ebiten.ActualFPS(), p[0], p[1], p[2], g.game.Disconnect().Charge,
+	))*/
 }
 
 func (g *Game) DrawFinalScreen(screen ebiten.FinalScreen, offscreen *ebiten.Image, geoM ebiten.GeoM) {
@@ -59,27 +78,12 @@ func (g *Game) DrawFinalScreen(screen ebiten.FinalScreen, offscreen *ebiten.Imag
 	})
 }
 
-func (g *Game) Draw(screen *ebiten.Image) {
-	if !g.updated {
-		g.game.Draw(g.offscreen)
-		g.updated = true
-	}
-
-	screen.DrawImage(g.offscreen, nil)
-
-	p := g.game.PlayerPosition()
-	ebitenutil.DebugPrint(screen, fmt.Sprintf(
-		"FPS: %.2f - Pos: %.2f, %.2f, %.2f - Charge: %.2f",
-		ebiten.ActualFPS(), p[0], p[1], p[2], g.game.Disconnect().Charge,
-	))
-}
-
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 	return logic.ScreenWidth, logic.ScreenHeight
 }
 
 func main() {
-	ebiten.SetVsyncEnabled(false)
+	ebiten.SetVsyncEnabled(true)
 	ebiten.SetTPS(logic.TPS)
 	ebiten.SetFullscreen(true)
 	ebiten.SetWindowSize(logic.ScreenWidth, logic.ScreenHeight)

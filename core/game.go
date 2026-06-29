@@ -131,6 +131,17 @@ func (g *Game) resolveWallCollision(pos mgl64.Vec3) mgl64.Vec3 {
 	return pos
 }
 
+// TogglePause flips the pause overlay from outside the update loop. On wasm,
+// main calls this on Escape (which the browser also uses to drop the pointer
+// lock) so the run can be paused there too. Ignored while a death or victory
+// screen owns the loop.
+func (g *Game) TogglePause() {
+	if g.dead || g.victory.Active() {
+		return
+	}
+	g.pause.Toggle()
+}
+
 func (g *Game) Update() {
 	g.ticks++
 
@@ -155,8 +166,10 @@ func (g *Game) Update() {
 		return
 	}
 
-	// Pause menu: Space or Escape toggles it; while open the whole world freezes.
-	if inpututil.IsKeyJustPressed(ebiten.KeySpace) || inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+	// Pause menu: Space toggles it; while open the whole world freezes. On wasm
+	// the pause is also raised from main when the pointer lock is lost (Escape /
+	// defocus), see Game.Pause.
+	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
 		g.pause.Toggle()
 	}
 	if g.pause.Active() {

@@ -5,10 +5,11 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 )
 
-// Pause is the overlay menu raised mid-run with Space or Escape. It dims the
-// frame, lists the controls and ticks off the two run objectives as they are
-// completed. The objective state is reset whenever the floor is cleared or the
-// run restarts (see Game.regenerate / Game.restart).
+// Pause is the overlay menu raised mid-run with Space (and on wasm whenever the
+// pointer lock is lost, e.g. the player presses Escape or defocuses the window).
+// It dims the frame, lists the controls and ticks off the two run objectives as
+// they are completed. The objective state is reset whenever the floor is cleared
+// or the run restarts (see Game.regenerate / Game.restart).
 type Pause struct {
 	active    bool
 	objButton bool // pressed the button that powers the exit elevator
@@ -64,8 +65,9 @@ func (p *Pause) Draw(dst *ebiten.Image) {
 	controls := [...][2]string{
 		{"WASD", "Move"},
 		{"Shift", "Run"},
+		{"F", "Disconnect / Reconnect"},
 		{"R", "Restart"},
-		{"Esc / Space", "Pause / Resume"},
+		{"Space", "Pause / Resume"},
 	}
 	y := cy - 75
 	for _, c := range controls {
@@ -75,7 +77,7 @@ func (p *Pause) Draw(dst *ebiten.Image) {
 	}
 
 	// Objectives.
-	outlined(dst, "OBJECTIVES", faceMed, cx, cy+45, text.AlignCenter, gray, 1, 2)
+	outlined(dst, "OBJECTIVES", faceMed, cx, cy+80, text.AlignCenter, gray, 1, 2)
 	objs := [...]struct {
 		done bool
 		text string
@@ -83,7 +85,7 @@ func (p *Pause) Draw(dst *ebiten.Image) {
 		{p.objButton, "Find the button to power the elevator"},
 		{p.objEscape, "Find the elevator and escape"},
 	}
-	y = cy + 100
+	y = cy + 135
 	for _, o := range objs {
 		mark, clr := "[  ]", gray
 		if o.done {
@@ -93,5 +95,5 @@ func (p *Pause) Draw(dst *ebiten.Image) {
 		y += 30
 	}
 
-	outlined(dst, "[ ESC / SPACE ]  resume", faceSmall, cx, cy+200, text.AlignCenter, white, 1, 1)
+	outlined(dst, "[ SPACE ]  resume", faceSmall, cx, cy+235, text.AlignCenter, white, 1, 1)
 }
