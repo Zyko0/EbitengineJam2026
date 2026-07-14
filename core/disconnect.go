@@ -4,9 +4,8 @@ import (
 	"log"
 
 	xaudio "github.com/Zyko0/EbitengineJam2026/audio"
+	"github.com/Zyko0/EbitengineJam2026/input"
 	"github.com/Zyko0/EbitengineJam2026/logic"
-	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
 const (
@@ -76,7 +75,7 @@ func (d *DisconnectState) Unlock() {
 }
 
 func (d *DisconnectState) Update() {
-	if !d.locked && inpututil.IsKeyJustPressed(ebiten.KeyF) {
+	if !d.locked && input.JustPressed(input.Disconnect) {
 		if d.active {
 			d.setActive(false)
 		} else if d.Charge >= chargeMinStart {

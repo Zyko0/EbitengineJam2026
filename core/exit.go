@@ -52,10 +52,9 @@ func (s *ExitSequence) Start(e *entity.Elevator) {
 }
 
 // Update advances one tick of the sequence, driving the player and camera
-// directly. Mouse movement is consumed every frame so deltas stay fresh, but
-// only applied once the ride begins.
+// directly. The look delta is only applied once the ride begins.
 func (s *ExitSequence) Update(p *Player, cam *Camera) {
-	yawoff, pitchoff := input.ProcessMouseMovement()
+	yawoff, pitchoff := input.Look()
 
 	switch s.phase {
 	case exitWalk:

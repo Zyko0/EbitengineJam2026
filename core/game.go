@@ -154,28 +154,27 @@ func (g *Game) Update() {
 		if g.deathBySilhouette {
 			g.turnDeathGaze()
 		}
-		if inpututil.IsKeyJustPressed(ebiten.KeyR) {
+		if input.JustPressed(input.Restart) {
 			g.restart()
 		}
 		return
 	}
 	if g.victory.Active() {
 		g.victory.Update(tickSeconds)
-		if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
+		if input.JustPressed(input.Confirm) {
 			g.regenerate() // descend: clears the prompt and builds the next floor
 		}
 		return
 	}
 
-	// Pause menu: Space toggles it; while open the whole world freezes. On wasm
-	// the pause is also toggled from main when Escape drops the pointer lock, see
-	// Game.TogglePause.
-	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
+	// Pause menu: Space/Start toggles it; while open the whole world freezes. On
+	// wasm the pause is also raised from main when Escape drops the pointer lock,
+	// see Game.Pause.
+	if input.JustPressed(input.Pause) {
 		g.pause.Toggle()
 	}
 	if g.pause.Active() {
-		input.ProcessMouseMovement() // drain the look delta so resuming doesn't snap
-		if inpututil.IsKeyJustPressed(ebiten.KeyR) {
+		if input.JustPressed(input.Restart) {
 			g.restart()
 		}
 		return
@@ -235,20 +234,19 @@ func (g *Game) Update() {
 
 	// Camera look
 	yaw, pitch := g.camera.YawPitch()
-	yawoff, pitchoff := input.ProcessMouseMovement()
+	yawoff, pitchoff := input.Look()
 	yaw += yawoff
 	pitch = max(min(pitch+pitchoff, math.Pi/2), -math.Pi/2)
 	g.camera.SetYawPitch(yaw, pitch)
 
 	// Movement input
-	g.player.Running = ebiten.IsKeyPressed(ebiten.KeyShift)
-	g.player.Moving = ebiten.IsKeyPressed(ebiten.KeyW) || ebiten.IsKeyPressed(ebiten.KeyS) ||
-		ebiten.IsKeyPressed(ebiten.KeyA) || ebiten.IsKeyPressed(ebiten.KeyD)
+	g.player.Running = input.Pressed(input.Run)
+	g.player.Moving = input.Moving()
 	g.player.Dark = g.disconnect.Active()
 	g.player.Update()
 
 	// Physics
-	pos := input.ProcessKeyboard(
+	pos := input.ProcessMovement(
 		g.player.Pos,
 		g.camera.Direction(),
 		g.camera.Right(),

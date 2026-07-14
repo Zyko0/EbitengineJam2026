@@ -32,6 +32,8 @@ func New() *Game {
 }
 
 func (g *Game) Update() error {
+	input.Update()
+
 	if !input.EnsureCursorCaptured() {
 		// On wasm the browser eats the Escape keydown to release the pointer lock,
 		// so a lock we previously held disappearing is our only Escape/defocus
@@ -41,11 +43,16 @@ func (g *Game) Update() error {
 			g.game.Pause()
 		}
 		g.wasCaptured = false
-		return nil
+		// A gamepad player never holds a pointer lock: keep the game running
+		// whenever the pad was the last device used.
+		if !input.GamepadActive() {
+			return nil
+		}
+	} else {
+		g.wasCaptured = true
 	}
-	g.wasCaptured = true
 	// Escape quits on native; on wasm it releases the pointer lock, handled above.
-	if runtime.GOOS != "js" && ebiten.IsKeyPressed(ebiten.KeyEscape) {
+	if runtime.GOOS != "js" && input.Pressed(input.Quit) {
 		return ebiten.Termination
 	}
 

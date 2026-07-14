@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/Zyko0/EbitengineJam2026/input"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 )
@@ -65,7 +66,7 @@ func (p *Pause) Draw(dst *ebiten.Image) {
 
 	outlined(dst, "PAUSE", faceBig, cx, cy-230, text.AlignCenter, white, 1, 3)
 
-	// Controls.
+	// Controls, labeled for whichever device was used last.
 	outlined(dst, "CONTROLS", faceMed, cx, cy-130, text.AlignCenter, gray, 1, 2)
 	controls := [...][2]string{
 		{"WASD", "Move"},
@@ -73,6 +74,17 @@ func (p *Pause) Draw(dst *ebiten.Image) {
 		{"F", "Disconnect / Reconnect"},
 		{"R", "Restart"},
 		{"Space", "Pause / Resume"},
+	}
+	resume := "[ SPACE ]  resume"
+	if input.GamepadActive() {
+		controls = [...][2]string{
+			{"L-Stick", "Move"},
+			{"L3 / LB", "Run"},
+			{"B / RT", "Disconnect / Reconnect"},
+			{"X", "Restart"},
+			{"Start", "Pause / Resume"},
+		}
+		resume = "[ START ]  resume"
 	}
 	y := cy - 75
 	for _, c := range controls {
@@ -100,5 +112,5 @@ func (p *Pause) Draw(dst *ebiten.Image) {
 		y += 30
 	}
 
-	outlined(dst, "[ SPACE ]  resume", faceSmall, cx, cy+235, text.AlignCenter, white, 1, 1)
+	outlined(dst, resume, faceSmall, cx, cy+235, text.AlignCenter, white, 1, 1)
 }

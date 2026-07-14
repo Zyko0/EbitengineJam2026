@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 
+	"github.com/Zyko0/EbitengineJam2026/input"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 )
@@ -52,5 +53,9 @@ func (v *Victory) Draw(dst *ebiten.Image) {
 	outlined(dst, "FLOOR CLEARED", faceBig, cx, cy-130, text.AlignCenter, white, a, 3)
 	outlined(dst, fmt.Sprintf("You escaped floor %d", v.floor), faceMed, cx, cy-30, text.AlignCenter, gray, a, 2)
 	outlined(dst, "Ascend to the next floor?", faceMed, cx, cy+30, text.AlignCenter, white, a, 2)
-	outlined(dst, "[ SPACE ]  continue", faceSmall, cx, cy+100, text.AlignCenter, white, a, 1)
+	confirm := "[ SPACE ]  continue"
+	if input.GamepadActive() {
+		confirm = "[ A ]  continue"
+	}
+	outlined(dst, confirm, faceSmall, cx, cy+100, text.AlignCenter, white, a, 1)
 }

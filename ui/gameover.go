@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/Zyko0/EbitengineJam2026/input"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 )
@@ -69,5 +70,9 @@ func (o *GameOver) Draw(dst *ebiten.Image) {
 	cy := float64(b.Dy()) / 2
 	outlined(dst, "YOU DIED", faceBig, cx, cy-70, text.AlignCenter, white, a, 3)
 	outlined(dst, o.cause.subtitle(), faceMed, cx, cy+20, text.AlignCenter, gray, a, 2)
-	outlined(dst, "[ R ]  restart", faceSmall, cx, cy+90, text.AlignCenter, white, a, 1)
+	restart := "[ R ]  restart"
+	if input.GamepadActive() {
+		restart = "[ X ]  restart"
+	}
+	outlined(dst, restart, faceSmall, cx, cy+90, text.AlignCenter, white, a, 1)
 }

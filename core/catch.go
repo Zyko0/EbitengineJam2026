@@ -5,7 +5,6 @@ import (
 
 	"github.com/Zyko0/EbitengineJam2026/audio"
 	"github.com/Zyko0/EbitengineJam2026/core/entity"
-	"github.com/Zyko0/EbitengineJam2026/input"
 	"github.com/go-gl/mathgl/mgl64"
 )
 
@@ -38,11 +37,9 @@ func (s *CatchSequence) Start(e entity.Entity) {
 func (s *CatchSequence) Update(p *Player, cam *Camera) (landed bool) {
 	s.elapsed += tickSeconds
 
-	// Drain mouse deltas every tick (discarded) so they don't pile up and snap the
-	// view the moment free look returns.
-	input.ProcessMouseMovement()
-
-	// Force-look: yaw onto the foe, pitch to its configured up/down angle.
+	// Force-look: yaw onto the foe, pitch to its configured up/down angle. The
+	// player's look input is simply ignored; input.Update keeps deltas fresh so
+	// nothing piles up for when free look returns.
 	ep := s.enemy.Position()
 	to := mgl64.Vec3{ep.X() - p.Pos.X(), 0, ep.Z() - p.Pos.Z()}
 	yaw, pitch := cam.YawPitch()
